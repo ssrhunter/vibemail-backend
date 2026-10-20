@@ -1,17 +1,4 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
-
-let cachedClient: SupabaseClient | null = null;
-
-function getServiceClient(): SupabaseClient {
-  if (cachedClient) return cachedClient;
-  const url = process.env.SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceRoleKey) {
-    throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
-  }
-  cachedClient = createClient(url, serviceRoleKey);
-  return cachedClient;
-}
+import { getServiceClient } from './client';
 
 export interface UpsertUserTokensInput {
   googleId: string;
@@ -109,5 +96,16 @@ export async function updateWatchInfo(input: UpdateWatchInfoInput): Promise<void
     .eq('google_id', input.googleId);
   if (error) {
     throw new Error(`Failed to update watch info: ${error.message}`);
+  }
+}
+
+export async function updateHistoryId(googleId: string, historyId: string): Promise<void> {
+  const supabase = getServiceClient();
+  const { error } = await supabase
+    .from('users')
+    .update({ history_id: historyId, updated_at: new Date().toISOString() })
+    .eq('google_id', googleId);
+  if (error) {
+    throw new Error(`Failed to update history_id: ${error.message}`);
   }
 }
