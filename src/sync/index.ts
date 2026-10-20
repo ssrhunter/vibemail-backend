@@ -1,7 +1,7 @@
 import { google, gmail_v1 } from 'googleapis';
 import { getAuthenticatedClient } from '../providers/gmail/auth';
 import { updateHistoryId } from '../db/users';
-import { upsertMessages, MessageRow } from '../db/messages';
+import { upsertMessages, MessageRow, getMessageLabelIds, updateMessageReadStatus } from '../db/messages';
 import { ProviderError, ProviderErrorCode } from '../types/provider';
 
 const INITIAL_SYNC_LIMIT = 50;
@@ -150,4 +150,34 @@ export async function runInitialSync(googleId: string): Promise<InitialSyncResul
   await updateHistoryId(googleId, historyId);
 
   return { syncedCount: rows.length, historyId };
+}
+
+export interface MarkMessagesReadResult {
+  succeeded: string[];
+  failed: { id: string; code: string }[];
+}
+
+/** Removes the UNREAD label via Gmail for each id, then updates the stored row's
+ *  is_read/label_ids to match. Per-id failures are collected rather than thrown, so one
+ *  bad id in a batch doesn't fail the others. */
+export async function markMessagesRead(googleId: string, gmailIds: string[]): Promise<MarkMessagesReadResult> {
+  const client = await getAuthenticatedClient(googleId);
+  const gmail = google.gmail({ version: 'v1', auth: client });
+
+  const succeeded: string[] = [];
+  const failed: { id: string; code: string }[] = [];
+
+  for (const id of gmailIds) {
+    try {
+      await gmail.users.messages.modify({ userId: 'me', id, requestBody: { removeLabelIds: ['UNREAD'] } });
+      const currentLabelIds = (await getMessageLabelIds(id, googleId)) ?? [];
+      const nextLabelIds = currentLabelIds.filter((label) => label !== 'UNREAD');
+      await updateMessageReadStatus(id, googleId, true, nextLabelIds);
+      succeeded.push(id);
+    } catch {
+      failed.push({ id, code: 'GMAIL_API_ERROR' });
+    }
+  }
+
+  return { succeeded, failed };
 }

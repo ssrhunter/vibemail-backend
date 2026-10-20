@@ -114,6 +114,15 @@ export async function getUserByEmail(email: string): Promise<UserHistoryLookup |
   return { googleId: data.google_id, historyId: data.history_id };
 }
 
+export async function getUserHistoryId(googleId: string): Promise<string | null> {
+  const supabase = getServiceClient();
+  const { data, error } = await supabase.from('users').select('history_id').eq('google_id', googleId).maybeSingle();
+  if (error) {
+    throw new Error(`Failed to load history_id: ${error.message}`);
+  }
+  return data ? (data.history_id as string | null) : null;
+}
+
 export async function updateHistoryId(googleId: string, historyId: string): Promise<void> {
   const supabase = getServiceClient();
   const { error } = await supabase
