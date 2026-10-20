@@ -38,7 +38,7 @@ OAuth redirect target registered with Google. Exchanges the authorization code f
 **Processing:**
 1. Validate `code` and `state` are present.
 2. Call `supabase.auth.exchangeCodeForSession(code)`.
-3. On success, Supabase returns a session plus `provider_token` (Google access token) and `provider_refresh_token` (Google refresh token, only present on first consent). Upsert both into `google_oauth_tokens` (see §3) keyed by the Supabase user id.
+3. On success, Supabase returns a session plus `provider_token` (Google access token) and `provider_refresh_token` (Google refresh token, only present on first consent). Upsert both into `users` (see §3), keyed by `google_id`.
 4. Return the Supabase session to the caller.
 
 **Response — `200`:**
@@ -61,7 +61,7 @@ OAuth redirect target registered with Google. Exchanges the authorization code f
 | `VALIDATION_ERROR` | 400 | `code` or `state` missing from the query string |
 | `OAUTH_DENIED` | 401 | User declined consent on Google's screen (Google redirects with `error=access_denied`) |
 | `OAUTH_EXCHANGE_FAILED` | 502 | `exchangeCodeForSession` rejected the code (expired, already used, state mismatch) |
-| `INTERNAL_ERROR` | 500 | Any other unexpected failure (e.g. `google_oauth_tokens` upsert fails) |
+| `INTERNAL_ERROR` | 500 | Any other unexpected failure (e.g. `users` upsert fails) |
 
 ## 2.2 `GET /api/v1/messages`
 
@@ -171,7 +171,7 @@ Marks a batch of messages as read (removes the `UNREAD` label).
 |---|---|---|---|
 | `messageIds` | string[] | yes | Non-empty |
 
-**Processing:** for each id, call Gmail to remove the `UNREAD` label (batched where the Gmail API allows), update the matching `messages` row's `label_ids`/`is_unread`. Partial failure is not a hard error — report per-id outcome.
+**Processing:** for each id, call Gmail to remove the `UNREAD` label (batched where the Gmail API allows), update the matching `messages` row's `label_ids`/`is_read`. Partial failure is not a hard error — report per-id outcome.
 
 **Response — `200`:**
 ```json
@@ -198,39 +198,42 @@ Note: individual Gmail-side failures for specific ids are reported inside the `2
 
 # 3. Stored Message Data Model
 
-Every message synced from Gmail is stored as one row in `messages`. Column-by-column mapping to the Gmail API `Message` resource:
+Every message synced from Gmail is stored as one row in `messages`, keyed on `gmail_id`. Column-by-column mapping to the Gmail API `Message` resource:
 
 | Column | Type | Source in Gmail API response |
 |---|---|---|
-| `id` | `text` (PK) | `message.id` |
-| `user_id` | `uuid` (FK → `auth.users.id`) | Not from Gmail — the authenticated Supabase user |
+| `gmail_id` | `text` (PK) | `message.id` |
+| `google_id` | `text` (references `users.google_id`) | Not from Gmail — the authenticated user's Google account id |
 | `thread_id` | `text` | `message.threadId` |
-| `subject` | `text` | `payload.headers[]` where `name = "Subject"`, that entry's `value` |
-| `from_address` | `text` | `payload.headers[]` where `name = "From"`, that entry's `value` |
-| `to_addresses` | `text[]` | Parsed (split on `,`) from `payload.headers[]` where `name = "To"` |
-| `cc_addresses` | `text[]`, nullable | Parsed from `payload.headers[]` where `name = "Cc"` |
-| `snippet` | `text` | `message.snippet` |
-| `body_text` | `text`, nullable | Base64url-decoded `data` from the `text/plain` part: `payload.body.data` directly if `payload.mimeType = "text/plain"`, else the matching entry in `payload.parts[].body.data` |
-| `body_html` | `text`, nullable | Base64url-decoded `data` from the `text/html` part, same lookup rule as `body_text` |
+| `subject` | `text`, nullable | `payload.headers[]` where `name` matches `"Subject"` case-insensitively, that entry's `value` |
+| `from_address` | `text`, nullable | `payload.headers[]` where `name` matches `"From"` case-insensitively |
+| `to_address` | `text`, nullable | `payload.headers[]` where `name` matches `"To"` case-insensitively — stored as the raw header value (may contain multiple comma-separated addresses), not parsed into an array |
+| `snippet` | `text`, nullable | `message.snippet` |
+| `body_plain` | `text`, nullable | Base64url-decoded `text/plain` part: walks `payload.parts[]` recursively (skipping parts with a `filename`, i.e. attachments); for a single-part message with no `parts` array, falls back to `payload.body.data` when `payload.mimeType` isn't `text/html` |
+| `body_html` | `text`, nullable | Base64url-decoded `text/html` part, same lookup rule as `body_plain` |
 | `label_ids` | `text[]` | `message.labelIds` |
-| `is_unread` | `boolean` (derived, not stored from Gmail directly) | `true` iff `"UNREAD"` is in `label_ids` |
-| `has_attachments` | `boolean` (derived) | `true` iff any `payload.parts[]` entry has both a `filename` and `body.attachmentId` |
-| `attachments` | `jsonb`, nullable | Array of `{ filename, mimeType, attachmentId, size }` built from each `payload.parts[]` entry matching the `has_attachments` rule (`filename` ← `part.filename`, `mimeType` ← `part.mimeType`, `attachmentId` ← `part.body.attachmentId`, `size` ← `part.body.size`) |
-| `internal_date` | `timestamptz` | `message.internalDate` (epoch milliseconds as a string in the API; converted to a timestamp) |
-| `size_estimate` | `integer` | `message.sizeEstimate` |
-| `history_id` | `text` | `message.historyId` |
+| `is_read` | `boolean` (derived, not stored from Gmail directly) | `true` iff `"UNREAD"` is **not** in `label_ids` |
+| `is_starred` | `boolean` (derived) | `true` iff `"STARRED"` is in `label_ids` |
+| `sent_at` | `timestamptz`, nullable | Parsed from `payload.headers[]` where `name` matches `"Date"` case-insensitively (not from `message.internalDate`) |
 | `synced_at` | `timestamptz` | Not from Gmail — set to `now()` on every upsert |
-| `created_at` | `timestamptz` | Not from Gmail — set to `now()` on first insert only |
+| `created_at` | `timestamptz` | Not from Gmail — set by the column default on first insert only |
 
-A second table, `google_oauth_tokens`, holds the Gmail-scoped credentials Supabase does not keep refreshing automatically:
+Not currently populated (dropped from the original design, not yet rebuilt): `cc_address`, `has_attachments`, `attachments`, `size_estimate`, and a per-message `history_id`. Attachment handling and size tracking are open work, not an oversight — see §5.
+
+A second table, `users`, holds account identity, the Gmail-scoped OAuth credentials, and the Pub/Sub watch checkpoint. Google does not auto-refresh these the way Supabase would, so they're owned and refreshed by this backend directly:
 
 | Column | Type | Notes |
 |---|---|---|
-| `user_id` | `uuid` (PK, FK → `auth.users.id`) | |
-| `access_token` | `text` | Google's `provider_token`, captured at OAuth callback time |
-| `refresh_token` | `text` | Google's `provider_refresh_token`; only returned by Google on first consent — must be preserved across subsequent re-auths |
-| `scope` | `text` | Space-separated granted scopes |
-| `expires_at` | `timestamptz` | When `access_token` expires and needs refreshing via `refresh_token` |
+| `google_id` | `text` (PK) | Google's stable account id (`sub` claim from the OAuth id_token) |
+| `email` | `text` | From the OAuth id_token |
+| `access_token_encrypted` | `text` | Google's access token, AES-256-GCM encrypted (`iv:authTag:ciphertext`, base64) before storage — never stored in plaintext |
+| `refresh_token_encrypted` | `text` | Google's refresh token, same encryption; only returned by Google on first consent — preserved across subsequent refreshes rather than overwritten with nothing |
+| `token_expiry` | `timestamptz` | When `access_token_encrypted` expires and needs refreshing via `refresh_token_encrypted` |
+| `watch_expiry` | `timestamptz`, nullable | Expiration of the current Gmail `users.watch` registration |
+| `history_id` | `text`, nullable | Mailbox-level sync checkpoint — set from `users.getProfile()` after the initial sync, and from `users.watch`'s response when a watch is (re-)registered |
+| `created_at` / `updated_at` | `timestamptz` | Not from Gmail |
+
+Note: there is no separate Supabase Auth session here — `google_id` (not a Supabase `auth.users` uuid) is the identity key throughout, since the OAuth flow is a custom code exchange against Google directly, not Supabase Auth's hosted provider. §2.1's "Processing" steps and response shape still describe the Supabase-Auth-session version of this flow and have not yet been reconciled with this — that's a separate, larger rewrite than this table-naming pass.
 
 ---
 
@@ -238,7 +241,7 @@ A second table, `google_oauth_tokens`, holds the Gmail-scoped credentials Supaba
 
 > **Session 1** delivers the server logic for all four endpoints in §2, plus the full Vitest suite, green in CI. Session 1's code may run against a local/dev migration that has not yet been reviewed or merged.
 >
-> **Session 2** delivers the `.sql` schema migration for `messages` and `google_oauth_tokens` (§3).
+> **Session 2** delivers the `.sql` schema migration for `messages` and `users` (§3).
 >
 > **The schema migration must not be reviewed or merged until Session 1's server-logic PR has already merged with passing tests.** Server logic and tests ship first; schema review/merge happens strictly after.
 
@@ -248,4 +251,6 @@ A second table, `google_oauth_tokens`, holds the Gmail-scoped credentials Supaba
 
 - Exact `maxResults` default and hard ceiling for `GET /messages` — not specified here; pick a concrete default (e.g. 50) and ceiling (e.g. 100) during implementation.
 - Attachment size ceiling for `POST /messages` — not specified here; needs a concrete byte limit (and matching `VALIDATION_ERROR` behavior) before implementation.
-- Google `access_token` refresh strategy — `google_oauth_tokens.expires_at` exists to support refreshing, but the refresh algorithm (when to refresh, retry-on-401 vs. proactive) is not defined here.
+- Google `access_token` refresh strategy — `users.token_expiry` exists to support refreshing, but the refresh algorithm (when to refresh, retry-on-401 vs. proactive) is not defined here.
+- Attachment handling (`cc_address`, `has_attachments`, `attachments`, `size_estimate`, per-message `history_id`) was dropped from §3's `messages` table when it was rewritten to match the actual sync implementation — needs its own design pass, not just a schema add-back.
+- §2.1's OAuth callback "Processing" steps and response shape still describe Supabase Auth's `exchangeCodeForSession` flow, which doesn't match §3's `users` table (keyed by `google_id`, not a Supabase session). Needs a dedicated rewrite once the actual HTTP handler (build unit 6) is built.

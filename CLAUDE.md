@@ -27,18 +27,19 @@ Note: `contract.md` was written assuming Supabase Auth's hosted Google OAuth pro
 
 ## Commands
 
-No `build`/`dev`/`lint` scripts are wired into `package.json` yet, and its `test` script is a placeholder stub. Until those are added, use the underlying tools directly:
+`npm test` runs the real Vitest suite. There is deliberately **no `build` script** in `package.json` — with no `framework` set in `vercel.json`, Vercel's zero-config detection treats a package.json `build` script as a static-site build step and matches the whole project root to `@vercel/static-build` *in addition to* the actual `api/*.ts` functions (which `@vercel/node` compiles independently and don't need it at all). That phantom static-build match is what breaks `vercel dev`/`vercel build` (it tries to install with yarn, which isn't on this machine, and separately fails on `STATIC_BUILD_NO_OUT_DIR` even when it does install). Don't re-add a `build` script for that reason — use `typecheck` instead:
 
 ```bash
-npx tsc --noEmit                          # type-check (strict mode is on)
-npx vitest                                 # run the full test suite in watch mode
-npx vitest run                             # run the full suite once
+npx tsc --noEmit                          # type-check (strict mode is on) — also npm run typecheck
+npm test                                   # run the full suite once (vitest run)
+npx vitest                                 # run the full suite in watch mode
 npx vitest run tests/unit/<file>.test.ts   # run a single test file
 npx vitest run -t "<test name>"            # run tests matching a name
+npx vercel pull --yes --environment preview  # first-time/occasional: sync local .vercel/ with the dashboard project
 npx vercel dev                             # serve api/ locally (Vercel dev server)
 ```
 
-ESLint is not a dependency of this project — there is no lint command to run.
+ESLint is not a dependency of this project — there is no lint command to run. `dev` in `package.json` (`ts-node src/index.ts`) is stale — `src/index.ts` doesn't exist; this is a Vercel serverless app, use `npx vercel dev` instead, not `npm run dev`.
 
 ## Architecture
 

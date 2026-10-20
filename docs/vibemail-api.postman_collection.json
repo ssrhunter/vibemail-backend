@@ -1,0 +1,380 @@
+{
+  "info": {
+    "name": "Vibemail API",
+    "description": "Requests for the four client-facing endpoints documented in contract.md §2 (2.1-2.4). The Pub/Sub webhook (api/webhook/gmail.ts) is intentionally excluded — it's a Google-to-server callback with a Pub/Sub-shaped envelope, not a client-facing endpoint a REST client would call directly. Every error-code example reflects the actual codes in contract.md §2 and the implemented route handlers (UNAUTHENTICATED, VALIDATION_ERROR, OAUTH_DENIED, OAUTH_EXCHANGE_FAILED, GMAIL_API_ERROR, GMAIL_SEND_FAILED, INTERNAL_ERROR) — contract.md has no §4 covering endpoints/error codes, so this isn't built against the code names in the original request (UNAUTHORIZED, MISSING_FIELDS), which don't exist anywhere in this project.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000", "type": "string" },
+    { "key": "jwt", "value": "", "type": "string", "description": "Session JWT returned by the OAuth callback's accessToken field" }
+  ],
+  "item": [
+    {
+      "name": "OAuth Callback (GET /api/v1/auth/google/callback)",
+      "description": "contract.md §2.1. Not authenticated — this is what issues the session JWT used everywhere else.",
+      "item": [
+        {
+          "name": "Happy path",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/google/callback?code=sample-auth-code&state=sample-csrf-state",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "google", "callback"],
+              "query": [
+                { "key": "code", "value": "sample-auth-code" },
+                { "key": "state", "value": "sample-csrf-state" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "VALIDATION_ERROR - missing code and state",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/google/callback",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "google", "callback"]
+            },
+            "description": "No query params at all — expect 400 { error: { code: \"VALIDATION_ERROR\" } }."
+          },
+          "response": []
+        },
+        {
+          "name": "OAUTH_DENIED - user declined consent",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/google/callback?error=access_denied",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "google", "callback"],
+              "query": [{ "key": "error", "value": "access_denied" }]
+            },
+            "description": "Mimics Google's own redirect when the user clicks Deny on the consent screen — expect 401 { error: { code: \"OAUTH_DENIED\" } }."
+          },
+          "response": []
+        },
+        {
+          "name": "OAUTH_EXCHANGE_FAILED - invalid/expired code",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/google/callback?code=already-used-or-garbage-code&state=sample-csrf-state",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "google", "callback"],
+              "query": [
+                { "key": "code", "value": "already-used-or-garbage-code" },
+                { "key": "state", "value": "sample-csrf-state" }
+              ]
+            },
+            "description": "A code Google will reject (garbage, expired, or already exchanged) — expect 502 { error: { code: \"OAUTH_EXCHANGE_FAILED\" } }."
+          },
+          "response": []
+        },
+        {
+          "name": "INTERNAL_ERROR - unexpected server failure",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/google/callback?code=sample-auth-code&state=sample-csrf-state",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "google", "callback"],
+              "query": [
+                { "key": "code", "value": "sample-auth-code" },
+                { "key": "state", "value": "sample-csrf-state" }
+              ]
+            },
+            "description": "Not deterministically triggerable through request shape alone — this is the happy-path request run against a deliberately broken server (e.g. an invalid SUPABASE_SERVICE_ROLE_KEY so the users upsert throws). Expect 500 { error: { code: \"INTERNAL_ERROR\" } }."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "List Messages (GET /api/v1/messages)",
+      "description": "contract.md §2.2. Authenticated.",
+      "item": [
+        {
+          "name": "Happy path",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{jwt}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages?maxResults=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "messages"],
+              "query": [{ "key": "maxResults", "value": "20" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "UNAUTHENTICATED - no Authorization header",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "messages"]
+            },
+            "description": "Expect 401 { error: { code: \"UNAUTHENTICATED\" } }."
+          },
+          "response": []
+        },
+        {
+          "name": "VALIDATION_ERROR - maxResults not a positive integer",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{jwt}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages?maxResults=not-a-number",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "messages"],
+              "query": [{ "key": "maxResults", "value": "not-a-number" }]
+            },
+            "description": "Expect 400 { error: { code: \"VALIDATION_ERROR\" } }."
+          },
+          "response": []
+        },
+        {
+          "name": "GMAIL_API_ERROR - upstream Gmail failure",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{jwt}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "messages"]
+            },
+            "description": "Not deterministically triggerable from the request alone — use a {{jwt}} for an account whose Google refresh token has been revoked (revoke app access in the user's Google Account settings) so the live Gmail call fails. Expect 502 { error: { code: \"GMAIL_API_ERROR\" } }."
+          },
+          "response": []
+        },
+        {
+          "name": "INTERNAL_ERROR - unexpected server failure",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{jwt}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "messages"]
+            },
+            "description": "Run the happy-path request against a deliberately broken server (e.g. Postgres unreachable). Expect 500 { error: { code: \"INTERNAL_ERROR\" } }."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Send Message (POST /api/v1/messages)",
+      "description": "contract.md §2.3. Authenticated.",
+      "item": [
+        {
+          "name": "Happy path",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{jwt}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "messages"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"to\": [\"recipient@example.com\"],\n  \"cc\": [\"cc@example.com\"],\n  \"subject\": \"Re: Project update\",\n  \"bodyText\": \"Plain text body\",\n  \"bodyHtml\": \"<p>HTML body</p>\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "UNAUTHENTICATED - no Authorization header",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "messages"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"to\": [\"recipient@example.com\"],\n  \"subject\": \"Hi\",\n  \"bodyText\": \"Hello\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Expect 401 { error: { code: \"UNAUTHENTICATED\" } }."
+          },
+          "response": []
+        },
+        {
+          "name": "VALIDATION_ERROR - invalid body (missing to/subject)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{jwt}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "messages"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bodyText\": \"Missing to and subject\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Expect 400 { error: { code: \"VALIDATION_ERROR\", details: [...] } } naming the missing to/subject fields."
+          },
+          "response": []
+        },
+        {
+          "name": "GMAIL_SEND_FAILED - upstream Gmail send failure",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{jwt}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "messages"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"to\": [\"recipient@example.com\"],\n  \"subject\": \"Hi\",\n  \"bodyText\": \"Hello\",\n  \"inReplyTo\": \"nonexistent-gmail-message-id\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "A nonexistent inReplyTo id fails the Message-ID lookup before send — or use a revoked-token account as in the list endpoint. Expect 502 { error: { code: \"GMAIL_SEND_FAILED\" } }."
+          },
+          "response": []
+        },
+        {
+          "name": "INTERNAL_ERROR - unexpected server failure",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{jwt}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "messages"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"to\": [\"recipient@example.com\"],\n  \"subject\": \"Hi\",\n  \"bodyText\": \"Hello\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Run the happy-path request against a deliberately broken server (e.g. Postgres unreachable so the post-send upsert fails). Expect 500 { error: { code: \"INTERNAL_ERROR\" } }."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Mark Messages Read (PATCH /api/v1/messages/read)",
+      "description": "contract.md §2.4. Authenticated. Note: per-id Gmail-side failures are reported inside the 200 response's failed[] array (code GMAIL_API_ERROR), not as a top-level HTTP error, so there is deliberately no top-level GMAIL_API_ERROR request here — contract.md says so explicitly.",
+      "item": [
+        {
+          "name": "Happy path",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{jwt}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages/read",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "messages", "read"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messageIds\": [\"18c9f2a1b2c3d4e5\"]\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "UNAUTHENTICATED - no Authorization header",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages/read",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "messages", "read"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messageIds\": [\"18c9f2a1b2c3d4e5\"]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Expect 401 { error: { code: \"UNAUTHENTICATED\" } }."
+          },
+          "response": []
+        },
+        {
+          "name": "VALIDATION_ERROR - empty messageIds",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{jwt}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages/read",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "messages", "read"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messageIds\": []\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Expect 400 { error: { code: \"VALIDATION_ERROR\" } }."
+          },
+          "response": []
+        },
+        {
+          "name": "INTERNAL_ERROR - unexpected server failure",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{jwt}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages/read",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "messages", "read"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messageIds\": [\"18c9f2a1b2c3d4e5\"]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Run the happy-path request against a deliberately broken server (e.g. Postgres unreachable). Expect 500 { error: { code: \"INTERNAL_ERROR\" } }."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
