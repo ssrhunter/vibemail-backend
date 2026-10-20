@@ -107,7 +107,9 @@ async function identifyUser(client: OAuth2Client, idToken: string | null | undef
   return { googleId: payload.sub, email: payload.email };
 }
 
-async function registerWatch(client: OAuth2Client, googleId: string): Promise<void> {
+/** Calls Gmail's users.watch and persists the new watch_expiry/history_id. Reused by both
+ *  the OAuth callback (initial registration) and the renewal cron job (src/cron). */
+export async function registerWatch(client: OAuth2Client, googleId: string): Promise<void> {
   const gmail = google.gmail({ version: 'v1', auth: client });
   let res;
   try {

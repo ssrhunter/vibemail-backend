@@ -123,6 +123,27 @@ export async function getUserHistoryId(googleId: string): Promise<string | null>
   return data ? (data.history_id as string | null) : null;
 }
 
+export interface UserWithExpiringWatch {
+  googleId: string;
+}
+
+/** Users whose watch_expiry is already past, or due within `withinHours`. Excludes users
+ *  with no watch registered at all (watch_expiry null) — that's the OAuth callback's job,
+ *  not renewal. */
+export async function getUsersWithExpiringWatch(withinHours: number): Promise<UserWithExpiringWatch[]> {
+  const supabase = getServiceClient();
+  const threshold = new Date(Date.now() + withinHours * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from('users')
+    .select('google_id')
+    .not('watch_expiry', 'is', null)
+    .lte('watch_expiry', threshold);
+  if (error) {
+    throw new Error(`Failed to load users with expiring watch: ${error.message}`);
+  }
+  return (data ?? []).map((row) => ({ googleId: row.google_id as string }));
+}
+
 export async function updateHistoryId(googleId: string, historyId: string): Promise<void> {
   const supabase = getServiceClient();
   const { error } = await supabase
