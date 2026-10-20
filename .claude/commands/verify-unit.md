@@ -8,9 +8,13 @@ allowed-tools: Bash(npx tsc --noEmit), Bash(npm test), Bash(git diff --name-only
 
 Run exactly the three checks below, in order. This command reports results — it must never fix, edit, or modify anything, and never re-run a check after changing something.
 
-**Expected scope for this unit:** $ARGUMENTS
+**Argument given:** $ARGUMENTS
 
-If no scope was given above, ask the user which paths/directories this build unit (per `build_sequence.md`) is expected to touch before running Check 3 — do not guess at it.
+Resolve the expected scope for Check 3 from that argument before running it:
+
+- **No argument at all** — ask the user which paths/directories this build unit is expected to touch before running Check 3. Do not guess at it.
+- **A bare integer** (e.g. `7`) — this refers to item #<N> in the numbered list in `build_sequence.md`, not a literal scope string. Read `build_sequence.md` to identify that unit's name/description, then read CLAUDE.md's "Architecture" section, which maps each build_sequence.md unit number to the specific directories/files it owns (e.g. unit 1 → `src/types/provider.ts`, unit 3 → `src/sync`, unit 6 → `api/v1/*`, unit 7 → `tests/`). Use that mapping as the expected scope. If CLAUDE.md has no mapping for that unit number, fall back to asking the user — do not guess.
+- **Anything else** (a literal path, glob, or list of paths) — use it directly as the expected scope, unchanged.
 
 ## Check 1 — Type check
 
