@@ -27,6 +27,7 @@
     "@types/node": "^26.6.5",
     "googleapis": "^185.0.0",
     "jsonwebtoken": "^9.0.3",
+    "supabase": "^2.121.0",
     "ts-node": "^10.9.2",
     "typescript": "^7.0.2"
   },
