@@ -1,37 +1,47 @@
--- public.messages: synced Gmail messages (contract.md §3 data model).
--- Primary key is (user_id, id) rather than contract.md's literal single-column
--- id PK: Gmail message IDs are unique within one mailbox but not guaranteed
--- globally unique across different users' mailboxes, and RLS needs a
--- user_id-anchored row regardless.
+-- public.messages: synced Gmail messages, keyed on gmail_id (contract.md §3).
+-- Column set and types match src/db/messages.ts's MessageRow exactly, including the
+-- single-column PK: upsertMessages() upserts with { onConflict: 'gmail_id' }, so a
+-- composite key would break that upsert.
 create table if not exists public.messages (
-  user_id uuid not null references auth.users (id) on delete cascade,
-  id text not null,
+  gmail_id text primary key,
+  google_id text not null references public.users (google_id) on delete cascade,
   thread_id text not null,
   subject text,
   from_address text,
-  to_addresses text[] not null,
-  cc_addresses text[],
+  to_address text,
   snippet text,
-  body_text text,
+  body_plain text,
   body_html text,
   label_ids text[] not null,
-  is_unread boolean not null,
-  has_attachments boolean not null,
-  attachments jsonb,
-  internal_date timestamptz not null,
-  size_estimate integer,
-  history_id text,
+  is_read boolean not null,
+  is_starred boolean not null,
+  sent_at timestamptz,
   synced_at timestamptz not null default now(),
-  created_at timestamptz not null default now(),
-  primary key (user_id, id)
+  created_at timestamptz not null default now()
 );
 
-create index if not exists messages_user_id_internal_date_idx
-  on public.messages (user_id, internal_date desc);
+-- Matches listMessagesPage's query shape exactly: .eq('google_id', ...)
+-- .order('sent_at', desc).lt('sent_at', cursor).limit(...).
+create index if not exists messages_google_id_sent_at_idx
+  on public.messages (google_id, sent_at desc);
+
+-- contract.md: synced_at is "set to now() on every upsert" — upsertMessages() doesn't
+-- set it explicitly in the row payload, so a plain column default (which only fires on
+-- INSERT) isn't enough. This trigger guarantees it on every insert or update.
+create or replace function public.set_messages_synced_at()
+returns trigger as $$
+begin
+  new.synced_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists messages_set_synced_at on public.messages;
+create trigger messages_set_synced_at
+  before insert or update on public.messages
+  for each row
+  execute function public.set_messages_synced_at();
 
 alter table public.messages enable row level security;
-
-drop policy if exists "messages_select_own" on public.messages;
-create policy "messages_select_own" on public.messages
-  for select
-  using (auth.uid() = user_id);
+-- Same reasoning as public.users: no Supabase Auth session exists to scope an owner
+-- policy to, so this is service-role-only rather than an auth.uid() = google_id policy.
