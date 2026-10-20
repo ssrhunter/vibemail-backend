@@ -99,6 +99,21 @@ export async function updateWatchInfo(input: UpdateWatchInfoInput): Promise<void
   }
 }
 
+export interface UserHistoryLookup {
+  googleId: string;
+  historyId: string | null;
+}
+
+export async function getUserByEmail(email: string): Promise<UserHistoryLookup | null> {
+  const supabase = getServiceClient();
+  const { data, error } = await supabase.from('users').select('google_id, history_id').eq('email', email).maybeSingle();
+  if (error) {
+    throw new Error(`Failed to load user by email: ${error.message}`);
+  }
+  if (!data) return null;
+  return { googleId: data.google_id, historyId: data.history_id };
+}
+
 export async function updateHistoryId(googleId: string, historyId: string): Promise<void> {
   const supabase = getServiceClient();
   const { error } = await supabase

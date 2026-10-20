@@ -57,7 +57,7 @@ function parseSentAt(dateHeader: string | null): string | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
-function normalizeMessage(raw: gmail_v1.Schema$Message, googleId: string): MessageRow {
+export function normalizeMessage(raw: gmail_v1.Schema$Message, googleId: string): MessageRow {
   if (!raw.id || !raw.threadId) {
     throw new ProviderError(ProviderErrorCode.UPSTREAM_ERROR, 'Gmail message missing id/threadId');
   }
@@ -107,7 +107,7 @@ async function collectInboxMessageIds(gmail: gmail_v1.Gmail, limit: number): Pro
   return ids;
 }
 
-async function fetchFullMessage(gmail: gmail_v1.Gmail, id: string): Promise<gmail_v1.Schema$Message> {
+export async function fetchFullMessage(gmail: gmail_v1.Gmail, id: string): Promise<gmail_v1.Schema$Message> {
   try {
     const res = await gmail.users.messages.get({ userId: 'me', id, format: 'full' });
     return res.data;

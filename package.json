@@ -29,6 +29,7 @@
     "@supabase/supabase-js": "^2.117.3",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.6.5",
+    "@vercel/functions": "^3.10.1",
     "googleapis": "^185.0.0",
     "jsonwebtoken": "^9.0.3",
     "ts-node": "^10.9.2",
@@ -36,6 +37,7 @@
   },
   "devDependencies": {
     "@types/supertest": "^7.2.1",
+    "@vercel/node": "^23.0.1",
     "install": "^0.13.0",
     "npm": "^12.2.0",
     "supertest": "^7.3.1",
