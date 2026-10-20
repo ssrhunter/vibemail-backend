@@ -10,7 +10,7 @@
   "scripts": {
     "db:push": "supabase db push",
     "db:types": "supabase gen types typescript --linked > types/database.ts",
-    "build": "npx tsc",
+    "typecheck": "npx tsc",
     "test": "vitest run",
     "dev": "ts-node src/index.ts"
   },
