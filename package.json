@@ -9,8 +9,8 @@
   },
   "scripts": {
     "db:push": "supabase db push",
-    "db:types": "supabase gen types typescript --linked > types/database.ts",
-    "typecheck": "npx tsc",
+    "db:types": "supabase gen types typescript --linked > src/types/database.ts",
+    "typecheck": "npx tsc --noEmit",
     "test": "vitest run",
     "dev": "ts-node src/index.ts"
   },
