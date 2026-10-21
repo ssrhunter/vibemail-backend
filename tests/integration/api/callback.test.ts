@@ -1,10 +1,30 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { randomUUID } from 'crypto';
+import type { gmail_v1 } from 'googleapis';
+
+function fullMessage(id: string): gmail_v1.Schema$Message {
+  return {
+    id,
+    threadId: id,
+    labelIds: ['INBOX'],
+    snippet: 'hi',
+    payload: {
+      mimeType: 'text/plain',
+      headers: [
+        { name: 'Subject', value: 'Welcome' },
+        { name: 'From', value: 'sender@example.com' },
+        { name: 'To', value: 'me@example.com' },
+      ],
+      body: { data: Buffer.from('hi', 'utf8').toString('base64url') },
+    },
+  };
+}
 
 const hoisted = vi.hoisted(() => {
   let nextTokens: Record<string, unknown> = {};
   let nextTokenInfo: { sub?: string; email?: string } | null = null;
   let getTokenShouldThrow = false;
+  let messagesListShouldThrow = false;
 
   // Hand-rolled instead of `extends EventEmitter`: referencing an imported value from
   // inside vi.hoisted() hits a TDZ error, since Vitest hoists vi.mock/vi.hoisted calls
@@ -42,6 +62,12 @@ const hoisted = vi.hoisted(() => {
   return {
     FakeOAuth2Client,
     watchMock: vi.fn(),
+    messagesListMock: vi.fn(async () => {
+      if (messagesListShouldThrow) throw new Error('simulated Gmail upstream failure');
+      return { data: { messages: [{ id: 'msg-1' }], nextPageToken: null } };
+    }),
+    messagesGetMock: vi.fn(async () => ({ data: fullMessage('msg-1') })),
+    getProfileMock: vi.fn(async () => ({ data: { historyId: '500' } })),
     setNextTokens: (t: Record<string, unknown>) => {
       nextTokens = t;
     },
@@ -51,13 +77,22 @@ const hoisted = vi.hoisted(() => {
     setGetTokenShouldThrow: (v: boolean) => {
       getTokenShouldThrow = v;
     },
+    setMessagesListShouldThrow: (v: boolean) => {
+      messagesListShouldThrow = v;
+    },
   };
 });
 
 vi.mock('googleapis', () => ({
   google: {
     auth: { OAuth2: hoisted.FakeOAuth2Client },
-    gmail: () => ({ users: { watch: hoisted.watchMock } }),
+    gmail: () => ({
+      users: {
+        watch: hoisted.watchMock,
+        messages: { list: hoisted.messagesListMock, get: hoisted.messagesGetMock },
+        getProfile: hoisted.getProfileMock,
+      },
+    }),
   },
 }));
 
@@ -78,12 +113,14 @@ describe('GET /api/v1/auth/google/callback', () => {
   afterEach(async () => {
     const supabase = getServiceClient();
     for (const googleId of createdGoogleIds) {
+      await supabase.from('messages').delete().eq('google_id', googleId);
       await supabase.from('users').delete().eq('google_id', googleId);
     }
     createdGoogleIds.length = 0;
     vi.clearAllMocks();
     hoisted.setGetTokenShouldThrow(false);
     hoisted.setNextTokenInfo(null);
+    hoisted.setMessagesListShouldThrow(false);
   });
 
   it('200s and issues a session JWT on the happy path', async () => {
@@ -108,6 +145,42 @@ describe('GET /api/v1/auth/google/callback', () => {
     expect(capture.statusCode).toBe(200);
     const body = capture.body as SuccessBody;
     expect(typeof body.data.accessToken).toBe('string');
+    expect(body.data.user).toEqual({ id: googleId, email });
+
+    // The post-login initial sync (unit 3's runInitialSync) should have populated
+    // messages, not just persisted tokens/watch info.
+    const supabase = getServiceClient();
+    const { data: messageRow } = await supabase
+      .from('messages')
+      .select('gmail_id, google_id')
+      .eq('gmail_id', 'msg-1')
+      .eq('google_id', googleId)
+      .maybeSingle();
+    expect(messageRow).toMatchObject({ gmail_id: 'msg-1', google_id: googleId });
+  });
+
+  it('still 200s and signs the user in even when the post-login initial sync fails (best-effort)', async () => {
+    const googleId = `test-${randomUUID()}`;
+    const email = `${googleId}@example.com`;
+    hoisted.setNextTokens({
+      access_token: 'access-token',
+      refresh_token: 'refresh-token',
+      expiry_date: Date.now() + 3_600_000,
+      id_token: 'fake-id-token',
+    });
+    hoisted.setNextTokenInfo({ sub: googleId, email });
+    hoisted.watchMock.mockResolvedValue({ data: { historyId: '1', expiration: String(Date.now() + 604_800_000) } });
+    hoisted.setMessagesListShouldThrow(true);
+
+    const { req, res, capture } = createMockReqRes({
+      query: { code: 'good-code', state: 'csrf-state' },
+      cookies: { oauth_state: 'csrf-state' },
+    });
+    await handler(req, res);
+    createdGoogleIds.push(googleId);
+
+    expect(capture.statusCode).toBe(200);
+    const body = capture.body as SuccessBody;
     expect(body.data.user).toEqual({ id: googleId, email });
   });
 

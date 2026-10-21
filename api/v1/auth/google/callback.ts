@@ -4,6 +4,7 @@ import { signSessionToken } from '../../../../src/middleware/auth';
 import { sendError, sendSuccess } from '../../../../src/http/respond';
 import { OAUTH_STATE_COOKIE_NAME, clearOAuthStateCookie } from '../../../../src/http/cookies';
 import { ProviderError, ProviderErrorCode } from '../../../../src/types/provider';
+import { runInitialSync } from '../../../../src/sync';
 
 function queryParam(req: VercelRequest, name: string): string | undefined {
   const value = req.query[name];
@@ -45,6 +46,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
   try {
     const { googleId, email } = await handleOAuthCallback(code);
+
+    // Best-effort: populates messages with the 50 most recent immediately after login.
+    // Never blocks or fails the callback — tokens are already persisted and the user
+    // should still get signed in; GET /messages' lazy-bootstrap (runInitialSync when
+    // history_id is null) backfills this later if it didn't complete here.
+    try {
+      await runInitialSync(googleId);
+    } catch (syncErr) {
+      console.error('Post-login initial sync failed (non-blocking):', syncErr);
+    }
+
     const { token, expiresAt } = signSessionToken(googleId);
     sendSuccess(res, 200, {
       accessToken: token,
