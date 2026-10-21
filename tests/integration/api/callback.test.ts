@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 
 const hoisted = vi.hoisted(() => {
   let nextTokens: Record<string, unknown> = {};
-  let nextIdTokenPayload: { sub?: string; email?: string } | null = null;
+  let nextTokenInfo: { sub?: string; email?: string } | null = null;
   let getTokenShouldThrow = false;
 
   // Hand-rolled instead of `extends EventEmitter`: referencing an imported value from
@@ -31,8 +31,8 @@ const hoisted = vi.hoisted(() => {
     setCredentials(creds: Record<string, unknown>): void {
       this.credentials = creds;
     }
-    async verifyIdToken() {
-      return { getPayload: () => nextIdTokenPayload };
+    async getTokenInfo(_accessToken: string) {
+      return nextTokenInfo ?? {};
     }
     async refreshAccessToken() {
       return { credentials: {} };
@@ -45,8 +45,8 @@ const hoisted = vi.hoisted(() => {
     setNextTokens: (t: Record<string, unknown>) => {
       nextTokens = t;
     },
-    setNextIdTokenPayload: (p: { sub?: string; email?: string } | null) => {
-      nextIdTokenPayload = p;
+    setNextTokenInfo: (p: { sub?: string; email?: string } | null) => {
+      nextTokenInfo = p;
     },
     setGetTokenShouldThrow: (v: boolean) => {
       getTokenShouldThrow = v;
@@ -83,7 +83,7 @@ describe('GET /api/v1/auth/google/callback', () => {
     createdGoogleIds.length = 0;
     vi.clearAllMocks();
     hoisted.setGetTokenShouldThrow(false);
-    hoisted.setNextIdTokenPayload(null);
+    hoisted.setNextTokenInfo(null);
   });
 
   it('200s and issues a session JWT on the happy path', async () => {
@@ -95,7 +95,7 @@ describe('GET /api/v1/auth/google/callback', () => {
       expiry_date: Date.now() + 3_600_000,
       id_token: 'fake-id-token',
     });
-    hoisted.setNextIdTokenPayload({ sub: googleId, email });
+    hoisted.setNextTokenInfo({ sub: googleId, email });
     hoisted.watchMock.mockResolvedValue({ data: { historyId: '1', expiration: String(Date.now() + 604_800_000) } });
 
     const { req, res, capture } = createMockReqRes({
@@ -146,7 +146,7 @@ describe('GET /api/v1/auth/google/callback', () => {
       expiry_date: Date.now() + 3_600_000,
       id_token: 'fake-id-token',
     });
-    hoisted.setNextIdTokenPayload({}); // no sub/email -> identifyUser throws UPSTREAM_ERROR, not AUTH_ERROR
+    hoisted.setNextTokenInfo({}); // no sub/email -> identifyUser throws UPSTREAM_ERROR, not AUTH_ERROR
     const { req, res, capture } = createMockReqRes({
       query: { code: 'good-code', state: 'csrf-state' },
       cookies: { oauth_state: 'csrf-state' },

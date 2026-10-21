@@ -11,6 +11,7 @@ type OAuth2Client = Auth.OAuth2Client;
 const SCOPES = [
   'openid',
   'https://www.googleapis.com/auth/userinfo.email',
+  'https://www.googleapis.com/auth/userinfo.profile',
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/gmail.send',
@@ -114,16 +115,21 @@ export async function exchangeCodeForTokens(code: string): Promise<ProviderToken
   return toProviderTokens(tokens);
 }
 
-async function identifyUser(client: OAuth2Client, idToken: string | null | undefined): Promise<{ googleId: string; email: string }> {
-  if (!idToken) {
-    throw new ProviderError(ProviderErrorCode.AUTH_ERROR, 'Google did not return an id_token');
+/** Identifies the signed-in user via Google's token-introspection endpoint
+ *  (oauth2Client.getTokenInfo) rather than a separate profile API call. Note: TokenInfo
+ *  has no `name` field — it's a token-introspection response (aud/sub/email/scopes/
+ *  expiry), not a profile endpoint, so no display name is available from this call. */
+async function identifyUser(client: OAuth2Client, accessToken: string): Promise<{ googleId: string; email: string }> {
+  let tokenInfo;
+  try {
+    tokenInfo = await client.getTokenInfo(accessToken);
+  } catch (err) {
+    throw new ProviderError(ProviderErrorCode.UPSTREAM_ERROR, 'Failed to fetch Google token info', err);
   }
-  const ticket = await client.verifyIdToken({ idToken, audience: requireEnv('GOOGLE_CLIENT_ID') });
-  const payload = ticket.getPayload();
-  if (!payload?.sub || !payload.email) {
-    throw new ProviderError(ProviderErrorCode.UPSTREAM_ERROR, 'Google id_token did not include sub/email');
+  if (!tokenInfo.sub || !tokenInfo.email) {
+    throw new ProviderError(ProviderErrorCode.UPSTREAM_ERROR, 'Google token info did not include sub/email');
   }
-  return { googleId: payload.sub, email: payload.email };
+  return { googleId: tokenInfo.sub, email: tokenInfo.email };
 }
 
 /** Calls Gmail's users.watch and persists the new watch_expiry/history_id. Reused by both
@@ -165,7 +171,7 @@ export async function handleOAuthCallback(code: string): Promise<{ googleId: str
   }
   client.setCredentials(tokens);
 
-  const { googleId, email } = await identifyUser(client, tokens.id_token);
+  const { googleId, email } = await identifyUser(client, tokens.access_token);
 
   await upsertUserTokens({
     googleId,

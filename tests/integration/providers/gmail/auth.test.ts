@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto';
 // the instruction to run these against a live instance.
 const hoisted = vi.hoisted(() => {
   let nextTokens: Record<string, unknown> = {};
-  let nextIdTokenPayload: { sub?: string; email?: string } = {};
+  let nextTokenInfo: { sub?: string; email?: string } = {};
   const instances: InstanceType<typeof FakeOAuth2Client>[] = [];
   const watchMock = vi.fn();
 
@@ -36,8 +36,8 @@ const hoisted = vi.hoisted(() => {
     setCredentials(creds: Record<string, unknown>): void {
       this.credentials = creds;
     }
-    async verifyIdToken() {
-      return { getPayload: () => nextIdTokenPayload };
+    async getTokenInfo(_accessToken: string) {
+      return nextTokenInfo;
     }
     async refreshAccessToken() {
       return { credentials: nextTokens };
@@ -51,8 +51,8 @@ const hoisted = vi.hoisted(() => {
     setNextTokens: (t: Record<string, unknown>) => {
       nextTokens = t;
     },
-    setNextIdTokenPayload: (p: { sub?: string; email?: string }) => {
-      nextIdTokenPayload = p;
+    setNextTokenInfo: (p: { sub?: string; email?: string }) => {
+      nextTokenInfo = p;
     },
   };
 });
@@ -98,7 +98,7 @@ describe('OAuth callback: token encryption, persistence, and the refresh listene
       expiry_date: Date.now() + 3600_000,
       id_token: 'fake-id-token',
     });
-    hoisted.setNextIdTokenPayload({ sub: googleId, email });
+    hoisted.setNextTokenInfo({ sub: googleId, email });
     hoisted.watchMock.mockResolvedValue({ data: { historyId: '1000', expiration: String(Date.now() + 604_800_000) } });
 
     const result = await handleOAuthCallback('fake-auth-code');
@@ -130,7 +130,7 @@ describe('OAuth callback: token encryption, persistence, and the refresh listene
       expiry_date: Date.now() + 3600_000,
       id_token: 'fake-id-token',
     });
-    hoisted.setNextIdTokenPayload({ sub: googleId, email });
+    hoisted.setNextTokenInfo({ sub: googleId, email });
     hoisted.watchMock.mockResolvedValue({ data: { historyId: '1000', expiration: String(Date.now() + 604_800_000) } });
 
     await handleOAuthCallback('fake-auth-code');
