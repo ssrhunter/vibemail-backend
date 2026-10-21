@@ -6,7 +6,8 @@
   },
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:3000", "type": "string" },
-    { "key": "jwt", "value": "", "type": "string", "description": "Session JWT returned by the OAuth callback's accessToken field" }
+    { "key": "jwt", "value": "", "type": "string", "description": "Session JWT returned by the OAuth callback's accessToken field" },
+    { "key": "nextPageToken", "value": "", "type": "string", "description": "Captured automatically from List Messages > Happy path's meta.nextPageToken (see that request's Tests script); consumed by List Messages > Happy path - page 2." }
   ],
   "item": [
     {
@@ -103,6 +104,23 @@
       "item": [
         {
           "name": "Happy path",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Captures the cursor for \"Happy path - page 2\" below, which reuses it as pageToken.",
+                  "if (pm.response.code === 200) {",
+                  "    const nextPageToken = pm.response.json()?.meta?.nextPageToken;",
+                  "    if (nextPageToken) {",
+                  "        pm.collectionVariables.set('nextPageToken', nextPageToken);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{jwt}}" }],
@@ -111,7 +129,26 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "messages"],
               "query": [{ "key": "maxResults", "value": "20" }]
-            }
+            },
+            "description": "Page 1. Its Tests script captures meta.nextPageToken into the {{nextPageToken}} collection variable for \"Happy path - page 2\" below — run this request first (with enough messages synced that a next page actually exists)."
+          },
+          "response": []
+        },
+        {
+          "name": "Happy path - page 2 (cursor pagination)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{jwt}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages?maxResults=20&pageToken={{nextPageToken}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "messages"],
+              "query": [
+                { "key": "maxResults", "value": "20" },
+                { "key": "pageToken", "value": "{{nextPageToken}}" }
+              ]
+            },
+            "description": "Exercises cursor-based pagination (contract.md §2.2's pageToken param): sends the opaque cursor captured from the \"Happy path\" request above's meta.nextPageToken as this request's pageToken. Run \"Happy path\" first in the same collection run so {{nextPageToken}} is populated — if it's empty (fewer than maxResults messages synced, so there was no next page), this just repeats page 1, which still confirms pageToken is accepted, not that it actually advanced."
           },
           "response": []
         },
