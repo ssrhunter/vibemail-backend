@@ -200,6 +200,36 @@
           "response": []
         },
         {
+          "name": "VALIDATION_ERROR - maxResults non-numeric (abc)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{jwt}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages?maxResults=abc",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "messages"],
+              "query": [{ "key": "maxResults", "value": "abc" }]
+            },
+            "description": "Expect 400 { error: { code: \"VALIDATION_ERROR\" } }. A second non-numeric example alongside the hyphenated one above — Number('abc') is also NaN, so this hits the same maxResults-must-be-a-positive-integer branch, not the 422 INVALID_LIMIT ceiling check below."
+          },
+          "response": []
+        },
+        {
+          "name": "INVALID_LIMIT - maxResults over 100",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{jwt}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages?maxResults=101",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "messages"],
+              "query": [{ "key": "maxResults", "value": "101" }]
+            },
+            "description": "maxResults is a valid positive integer but exceeds the hard ceiling of 100 — rejected outright rather than silently clamped. Expect 422 { error: { code: \"INVALID_LIMIT\" } }."
+          },
+          "response": []
+        },
+        {
           "name": "GMAIL_API_ERROR - upstream Gmail failure",
           "request": {
             "method": "GET",
@@ -337,6 +367,28 @@
               "options": { "raw": { "language": "json" } }
             },
             "description": "Distinct from the \"missing to/subject\" case above: here every required field is present but set to an empty string (or an array containing one), not omitted. Checks that validation inspects the values themselves rather than just field presence — to: [\"\"] fails email-format validation, subject: \"\" fails the required-non-empty check, and bodyText: \"\" is falsy so it doesn't satisfy the bodyText/bodyHtml requirement either. Expect 400 { error: { code: \"VALIDATION_ERROR\", details: [...] } }."
+          },
+          "response": []
+        },
+        {
+          "name": "VALIDATION_ERROR - invalid recipient email address",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{jwt}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "messages"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"to\": [\"not-an-email-address\"],\n  \"subject\": \"Hi\",\n  \"bodyText\": \"Hello\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Distinct from the empty-string case above: this is a non-empty, well-formed-looking string that just isn't a valid email address (no @, no domain). Fails the to-field EMAIL_PATTERN check in api/v1/messages/index.ts's validateSendBody. Expect 400 { error: { code: \"VALIDATION_ERROR\", details: [{ field: \"to\", issue: \"must contain only valid email addresses\" }] } }."
           },
           "response": []
         },

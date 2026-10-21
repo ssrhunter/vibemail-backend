@@ -72,7 +72,7 @@ Lists the authenticated user's messages. Syncs on read: fetches from Gmail live,
 | Param | Type | Required | Notes |
 |---|---|---|---|
 | `pageToken` | string | no | Opaque cursor from a previous response's `meta.nextPageToken`; omit for the first page |
-| `maxResults` | integer | no | Page size; implementation picks a default and a hard ceiling (flagged open, §5) |
+| `maxResults` | integer | no | Page size; defaults to 50, hard ceiling of 100 — values over 100 are rejected (`INVALID_LIMIT`), not silently clamped |
 | `label` | string | no | Gmail label id to filter by, e.g. `INBOX`, `UNREAD` |
 | `q` | string | no | Gmail search-syntax query string, passed through to the Gmail API |
 
@@ -109,6 +109,7 @@ Lists the authenticated user's messages. Syncs on read: fetches from Gmail live,
 |---|---|---|
 | `UNAUTHENTICATED` | 401 | Missing/invalid/expired bearer token |
 | `VALIDATION_ERROR` | 400 | `maxResults` not a positive integer, or `pageToken` malformed |
+| `INVALID_LIMIT` | 422 | `maxResults` is a positive integer but exceeds the hard ceiling of 100 |
 | `GMAIL_API_ERROR` | 502 | The live Gmail API call failed (rate limit, token expired, upstream error) |
 | `INTERNAL_ERROR` | 500 | Upsert into Postgres failed, or any other unexpected failure |
 
@@ -250,7 +251,6 @@ Note: there is no separate Supabase Auth session here — `google_id` (not a Sup
 
 # 5. Open Items (flagged, not resolved by this contract)
 
-- Exact `maxResults` default and hard ceiling for `GET /messages` — not specified here; pick a concrete default (e.g. 50) and ceiling (e.g. 100) during implementation.
 - Attachment size ceiling for `POST /messages` — not specified here; needs a concrete byte limit (and matching `VALIDATION_ERROR` behavior) before implementation.
 - Google `access_token` refresh strategy — `users.token_expiry` exists to support refreshing, but the refresh algorithm (when to refresh, retry-on-401 vs. proactive) is not defined here.
 - Attachment handling (`cc_address`, `has_attachments`, `attachments`, `size_estimate`, per-message `history_id`) was dropped from §3's `messages` table when it was rewritten to match the actual sync implementation — needs its own design pass, not just a schema add-back.

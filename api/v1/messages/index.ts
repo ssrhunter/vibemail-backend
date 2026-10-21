@@ -37,7 +37,13 @@ async function handleList(req: VercelRequest, res: VercelResponse, googleId: str
       ]);
       return;
     }
-    limit = Math.min(parsed, MAX_PAGE_SIZE);
+    if (parsed > MAX_PAGE_SIZE) {
+      sendError(res, 422, 'INVALID_LIMIT', `maxResults must not exceed ${MAX_PAGE_SIZE}`, [
+        { field: 'maxResults', issue: `must be ${MAX_PAGE_SIZE} or less` },
+      ]);
+      return;
+    }
+    limit = parsed;
   }
 
   try {

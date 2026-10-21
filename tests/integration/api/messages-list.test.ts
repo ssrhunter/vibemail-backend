@@ -156,6 +156,19 @@ describe('GET /api/v1/messages', () => {
     expect((capture.body as ErrorBody).error.code).toBe('VALIDATION_ERROR');
   });
 
+  it('INVALID_LIMIT (422) when maxResults exceeds the hard ceiling of 100', async () => {
+    const googleId = await seedUser('500');
+    const { token } = signSessionToken(googleId);
+    const { req, res, capture } = createMockReqRes({
+      headers: { authorization: `Bearer ${token}` },
+      query: { maxResults: '101' },
+    });
+    await handler(req, res);
+
+    expect(capture.statusCode).toBe(422);
+    expect((capture.body as ErrorBody).error.code).toBe('INVALID_LIMIT');
+  });
+
   it('GMAIL_API_ERROR (502) when the lazy-bootstrap initial sync fails upstream', async () => {
     const googleId = await seedUser(null); // no history_id -> triggers runInitialSync
     hoisted.setListShouldThrow(true);
