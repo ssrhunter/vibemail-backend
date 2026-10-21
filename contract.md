@@ -160,18 +160,19 @@ Composes and sends a new message, or a reply into an existing thread.
 
 ## 2.4 `PATCH /api/v1/messages/read`
 
-Marks a batch of messages as read (removes the `UNREAD` label).
+Marks a batch of messages as read or unread (adds/removes the `UNREAD` label).
 
 **Request body:**
 ```json
-{ "messageIds": ["18c9f2a1b2c3d4e5", "18c9f2a1b2c3d4e6"] }
+{ "messageIds": ["18c9f2a1b2c3d4e5", "18c9f2a1b2c3d4e6"], "isRead": true }
 ```
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `messageIds` | string[] | yes | Non-empty |
+| `isRead` | boolean | no | Defaults to `true` (mark read) when omitted, preserving the original mark-as-read-only behavior for existing callers. `false` marks unread instead. |
 
-**Processing:** for each id, call Gmail to remove the `UNREAD` label (batched where the Gmail API allows), update the matching `messages` row's `label_ids`/`is_read`. Partial failure is not a hard error — report per-id outcome.
+**Processing:** for each id, call Gmail to remove the `UNREAD` label when `isRead` is `true`, or add it back when `isRead` is `false` (batched where the Gmail API allows), update the matching `messages` row's `label_ids`/`is_read`. Partial failure is not a hard error — report per-id outcome.
 
 **Response — `200`:**
 ```json
@@ -189,7 +190,7 @@ Marks a batch of messages as read (removes the `UNREAD` label).
 | Code | HTTP | When |
 |---|---|---|
 | `UNAUTHENTICATED` | 401 | Missing/invalid/expired bearer token |
-| `VALIDATION_ERROR` | 400 | `messageIds` missing or empty |
+| `VALIDATION_ERROR` | 400 | `messageIds` missing or empty, or `isRead` present but not a boolean |
 | `INTERNAL_ERROR` | 500 | Unexpected failure updating Postgres |
 
 Note: individual Gmail-side failures for specific ids are reported inside the `200` response body's `failed` array (code `GMAIL_API_ERROR`), not as a top-level HTTP error — the batch as a whole only fails at the HTTP level for the cases above.

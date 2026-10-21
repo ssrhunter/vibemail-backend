@@ -61,7 +61,7 @@ interface ReadSuccessBody {
 describe('PATCH /api/v1/messages/read', () => {
   const createdGoogleIds: string[] = [];
 
-  async function seedUserWithMessage(gmailId: string): Promise<string> {
+  async function seedUserWithMessage(gmailId: string, startsUnread = true): Promise<string> {
     const googleId = `test-${randomUUID()}`;
     await upsertUserTokens({
       googleId,
@@ -81,8 +81,8 @@ describe('PATCH /api/v1/messages/read', () => {
         snippet: 'hi',
         body_plain: 'hi',
         body_html: null,
-        label_ids: ['INBOX', 'UNREAD'],
-        is_read: false,
+        label_ids: startsUnread ? ['INBOX', 'UNREAD'] : ['INBOX'],
+        is_read: !startsUnread,
         is_starred: false,
         sent_at: new Date().toISOString(),
       },
@@ -103,9 +103,9 @@ describe('PATCH /api/v1/messages/read', () => {
     hoisted.modifyMock.mockResolvedValue({ data: {} });
   });
 
-  it('200s, removes UNREAD via Gmail, and updates is_read on the happy path', async () => {
+  it('200s, removes UNREAD via Gmail, and updates is_read on the happy path (mark as read)', async () => {
     const gmailId = `msg-${randomUUID()}`;
-    const googleId = await seedUserWithMessage(gmailId);
+    const googleId = await seedUserWithMessage(gmailId, true);
     const { token } = signSessionToken(googleId);
 
     const { req, res, capture } = createMockReqRes({
@@ -118,11 +118,41 @@ describe('PATCH /api/v1/messages/read', () => {
     expect(capture.statusCode).toBe(200);
     expect((capture.body as ReadSuccessBody).data.succeeded).toEqual([gmailId]);
     expect((capture.body as ReadSuccessBody).data.failed).toEqual([]);
+    expect(hoisted.modifyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: gmailId, requestBody: { removeLabelIds: ['UNREAD'] } })
+    );
 
     const supabase = getServiceClient();
-    const { data: row } = await supabase.from('messages').select('is_read').eq('gmail_id', gmailId).single();
+    const { data: row } = await supabase.from('messages').select('is_read, label_ids').eq('gmail_id', gmailId).single();
     expect(row).not.toBeNull();
     expect(row?.is_read).toBe(true);
+    expect(row?.label_ids).not.toContain('UNREAD');
+  });
+
+  it('200s, adds UNREAD via Gmail, and updates is_read on the happy path (mark as unread)', async () => {
+    const gmailId = `msg-${randomUUID()}`;
+    const googleId = await seedUserWithMessage(gmailId, false);
+    const { token } = signSessionToken(googleId);
+
+    const { req, res, capture } = createMockReqRes({
+      method: 'PATCH',
+      headers: { authorization: `Bearer ${token}` },
+      body: { messageIds: [gmailId], isRead: false },
+    });
+    await handler(req, res);
+
+    expect(capture.statusCode).toBe(200);
+    expect((capture.body as ReadSuccessBody).data.succeeded).toEqual([gmailId]);
+    expect((capture.body as ReadSuccessBody).data.failed).toEqual([]);
+    expect(hoisted.modifyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: gmailId, requestBody: { addLabelIds: ['UNREAD'] } })
+    );
+
+    const supabase = getServiceClient();
+    const { data: row } = await supabase.from('messages').select('is_read, label_ids').eq('gmail_id', gmailId).single();
+    expect(row).not.toBeNull();
+    expect(row?.is_read).toBe(false);
+    expect(row?.label_ids).toContain('UNREAD');
   });
 
   it('reports a per-id Gmail failure inside the 200 response failed[] array with code GMAIL_API_ERROR, not as an HTTP error', async () => {
@@ -159,6 +189,21 @@ describe('PATCH /api/v1/messages/read', () => {
       method: 'PATCH',
       headers: { authorization: `Bearer ${token}` },
       body: { messageIds: [] },
+    });
+    await handler(req, res);
+
+    expect(capture.statusCode).toBe(400);
+    expect((capture.body as ErrorBody).error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('VALIDATION_ERROR (400) when isRead is present but not a boolean', async () => {
+    const gmailId = `msg-${randomUUID()}`;
+    const googleId = await seedUserWithMessage(gmailId);
+    const { token } = signSessionToken(googleId);
+    const { req, res, capture } = createMockReqRes({
+      method: 'PATCH',
+      headers: { authorization: `Bearer ${token}` },
+      body: { messageIds: [gmailId], isRead: 'nope' },
     });
     await handler(req, res);
 

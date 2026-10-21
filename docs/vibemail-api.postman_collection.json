@@ -391,7 +391,7 @@
       "description": "contract.md §2.4. Authenticated. Note: per-id Gmail-side failures are reported inside the 200 response's failed[] array (code GMAIL_API_ERROR), not as a top-level HTTP error, so there is deliberately no top-level GMAIL_API_ERROR request here — contract.md says so explicitly.",
       "item": [
         {
-          "name": "Happy path",
+          "name": "Happy path - mark as read",
           "request": {
             "method": "PATCH",
             "header": [
@@ -407,7 +407,30 @@
               "mode": "raw",
               "raw": "{\n  \"messageIds\": [\"18c9f2a1b2c3d4e5\"]\n}",
               "options": { "raw": { "language": "json" } }
-            }
+            },
+            "description": "isRead omitted — defaults to true, matching the API's original mark-as-read-only behavior. Expect the message's is_read to become true and UNREAD removed from label_ids."
+          },
+          "response": []
+        },
+        {
+          "name": "Happy path - mark as unread",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{jwt}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages/read",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "messages", "read"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messageIds\": [\"18c9f2a1b2c3d4e5\"],\n  \"isRead\": false\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "isRead: false adds the UNREAD label back via Gmail. For best results use a message id that currently has UNREAD removed (e.g. one just run through \"Happy path - mark as read\" above), so this visibly flips it back. Expect the message's is_read to become false and UNREAD present in label_ids."
           },
           "response": []
         },
@@ -449,6 +472,28 @@
               "options": { "raw": { "language": "json" } }
             },
             "description": "Expect 400 { error: { code: \"VALIDATION_ERROR\" } }."
+          },
+          "response": []
+        },
+        {
+          "name": "VALIDATION_ERROR - isRead not a boolean",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{jwt}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages/read",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "messages", "read"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messageIds\": [\"18c9f2a1b2c3d4e5\"],\n  \"isRead\": \"yes\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "isRead present but a string, not a boolean. Expect 400 { error: { code: \"VALIDATION_ERROR\" } }."
           },
           "response": []
         },

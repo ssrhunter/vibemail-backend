@@ -151,15 +151,20 @@ export async function runInitialSync(googleId: string): Promise<InitialSyncResul
   return { syncedCount: rows.length, historyId };
 }
 
-export interface MarkMessagesReadResult {
+export interface SetMessagesReadStatusResult {
   succeeded: string[];
   failed: { id: string; code: string }[];
 }
 
-/** Removes the UNREAD label via Gmail for each id, then updates the stored row's
- *  is_read/label_ids to match. Per-id failures are collected rather than thrown, so one
- *  bad id in a batch doesn't fail the others. */
-export async function markMessagesRead(googleId: string, gmailIds: string[]): Promise<MarkMessagesReadResult> {
+/** Adds or removes the UNREAD label via Gmail for each id (isRead=true removes it,
+ *  isRead=false adds it), then updates the stored row's is_read/label_ids to match.
+ *  Per-id failures are collected rather than thrown, so one bad id in a batch doesn't
+ *  fail the others. */
+export async function setMessagesReadStatus(
+  googleId: string,
+  gmailIds: string[],
+  isRead: boolean
+): Promise<SetMessagesReadStatusResult> {
   const client = await getAuthenticatedClient(googleId);
   const gmail = google.gmail({ version: 'v1', auth: client });
 
@@ -168,10 +173,15 @@ export async function markMessagesRead(googleId: string, gmailIds: string[]): Pr
 
   for (const id of gmailIds) {
     try {
-      await gmail.users.messages.modify({ userId: 'me', id, requestBody: { removeLabelIds: ['UNREAD'] } });
+      const requestBody = isRead ? { removeLabelIds: ['UNREAD'] } : { addLabelIds: ['UNREAD'] };
+      await gmail.users.messages.modify({ userId: 'me', id, requestBody });
       const currentLabelIds = (await getMessageLabelIds(id, googleId)) ?? [];
-      const nextLabelIds = currentLabelIds.filter((label) => label !== 'UNREAD');
-      await updateMessageReadStatus(id, googleId, true, nextLabelIds);
+      const nextLabelIds = isRead
+        ? currentLabelIds.filter((label) => label !== 'UNREAD')
+        : currentLabelIds.includes('UNREAD')
+          ? currentLabelIds
+          : [...currentLabelIds, 'UNREAD'];
+      await updateMessageReadStatus(id, googleId, isRead, nextLabelIds);
       succeeded.push(id);
     } catch {
       failed.push({ id, code: 'GMAIL_API_ERROR' });
