@@ -1,5 +1,5 @@
 import { getAuthenticatedClient, registerWatch } from '../providers/gmail/auth';
-import { getUsersWithExpiringWatch } from '../db/users';
+import { getUsersWithExpiringWatch } from '../db';
 
 const RENEWAL_WINDOW_HOURS = 24;
 

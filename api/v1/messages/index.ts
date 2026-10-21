@@ -2,8 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { withAuth } from '../../../src/middleware/auth';
 import { sendError, sendSuccess } from '../../../src/http/respond';
 import { toApiMessage } from '../../../src/http/mappers';
-import { getUserHistoryId } from '../../../src/db/users';
-import { listMessagesPage, InvalidCursorError } from '../../../src/db/messages';
+import { getUser, listMessagesPage, InvalidCursorError } from '../../../src/db';
 import { runInitialSync } from '../../../src/sync';
 import { ProviderError, ProviderErrorCode } from '../../../src/types/provider';
 
@@ -37,8 +36,8 @@ export default withAuth(async (req: VercelRequest, res: VercelResponse, googleId
     // Lazy bootstrap: a user with no sync checkpoint yet has never been synced at all —
     // run the one-time initial sync before reading. Once history_id exists, unit 4's
     // webhook is responsible for keeping Postgres fresh, so this just reads the DB.
-    const historyId = await getUserHistoryId(googleId);
-    if (!historyId) {
+    const user = await getUser(googleId);
+    if (!user?.history_id) {
       await runInitialSync(googleId);
     }
 

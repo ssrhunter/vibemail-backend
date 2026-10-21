@@ -64,10 +64,8 @@ vi.mock('googleapis', () => ({
 
 import handler from '../../../api/v1/messages/index';
 import { createMockReqRes } from '../../helpers/http';
-import { getServiceClient } from '../../../src/db/client';
-import { upsertUserTokens, updateHistoryId } from '../../../src/db/users';
-import * as usersDb from '../../../src/db/users';
-import { upsertMessages } from '../../../src/db/messages';
+import { getServiceClient, upsertUserTokens, updateHistoryId, upsertMessages } from '../../../src/db';
+import * as dbModule from '../../../src/db';
 import { encrypt } from '../../../src/providers/gmail/encryption';
 import { signSessionToken } from '../../../src/middleware/auth';
 
@@ -175,7 +173,7 @@ describe('GET /api/v1/messages', () => {
     const { token } = signSessionToken(googleId);
     // Spies on our own db helper (not the Supabase SDK) to deterministically exercise
     // the catch-all path, which is otherwise not reliably triggerable black-box.
-    vi.spyOn(usersDb, 'getUserHistoryId').mockRejectedValueOnce(new Error('simulated internal failure'));
+    vi.spyOn(dbModule, 'getUser').mockRejectedValueOnce(new Error('simulated internal failure'));
 
     const { req, res, capture } = createMockReqRes({ headers: { authorization: `Bearer ${token}` } });
     await handler(req, res);

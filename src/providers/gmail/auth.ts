@@ -1,6 +1,6 @@
 import { google, Auth } from 'googleapis';
 import { encrypt, decrypt } from './encryption';
-import { upsertUserTokens, updateUserTokens, getUserByGoogleId, updateWatchInfo } from '../../db/users';
+import { upsertUserTokens, updateUserTokens, getUser, updateWatchExpiry, updateHistoryId } from '../../db';
 import { ProviderError, ProviderErrorCode, ProviderTokens } from '../../types/provider';
 
 type OAuth2Client = Auth.OAuth2Client;
@@ -124,11 +124,8 @@ export async function registerWatch(client: OAuth2Client, googleId: string): Pro
   if (!historyId || !expiration) {
     throw new ProviderError(ProviderErrorCode.UPSTREAM_ERROR, 'Gmail watch response missing historyId/expiration');
   }
-  await updateWatchInfo({
-    googleId,
-    watchExpiry: new Date(Number(expiration)),
-    historyId,
-  });
+  await updateWatchExpiry(googleId, new Date(Number(expiration)));
+  await updateHistoryId(googleId, historyId);
 }
 
 /** Step 2: handle the OAuth callback — exchange the code, identify the user, encrypt + persist
@@ -168,15 +165,15 @@ export async function handleOAuthCallback(code: string): Promise<{ googleId: str
 /** Rebuilds an authenticated client for a known user from their stored, encrypted tokens.
  *  For use by later units (sync/send) that need to call the Gmail API as this user. */
 export async function getAuthenticatedClient(googleId: string): Promise<OAuth2Client> {
-  const stored = await getUserByGoogleId(googleId);
+  const stored = await getUser(googleId);
   if (!stored) {
     throw new ProviderError(ProviderErrorCode.NOT_FOUND, `No stored tokens for google_id ${googleId}`);
   }
   const client = createOAuth2Client();
   client.setCredentials({
-    access_token: decrypt(stored.accessTokenEncrypted),
-    refresh_token: decrypt(stored.refreshTokenEncrypted),
-    expiry_date: new Date(stored.tokenExpiry).getTime(),
+    access_token: decrypt(stored.access_token_encrypted),
+    refresh_token: decrypt(stored.refresh_token_encrypted),
+    expiry_date: new Date(stored.token_expiry).getTime(),
   });
   attachTokenPersistenceListener(client, googleId);
   return client;
@@ -185,12 +182,12 @@ export async function getAuthenticatedClient(googleId: string): Promise<OAuth2Cl
 /** Explicit, on-demand refresh: loads the stored encrypted refresh token, decrypts it,
  *  exchanges it for a new access token, and persists the result before returning. */
 export async function refreshStoredAccessToken(googleId: string): Promise<ProviderTokens> {
-  const stored = await getUserByGoogleId(googleId);
+  const stored = await getUser(googleId);
   if (!stored) {
     throw new ProviderError(ProviderErrorCode.NOT_FOUND, `No stored tokens for google_id ${googleId}`);
   }
   const client = createOAuth2Client();
-  const refreshToken = decrypt(stored.refreshTokenEncrypted);
+  const refreshToken = decrypt(stored.refresh_token_encrypted);
   client.setCredentials({ refresh_token: refreshToken });
 
   let tokens: Auth.Credentials;

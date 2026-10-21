@@ -2,8 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { waitUntil } from '@vercel/functions';
 import { google, gmail_v1 } from 'googleapis';
 import { getAuthenticatedClient } from '../providers/gmail/auth';
-import { getUserByEmail, updateHistoryId } from '../db/users';
-import { upsertMessages, MessageRow } from '../db/messages';
+import { getUserByEmail, updateHistoryId, upsertMessages, MessageInsert } from '../db';
 import { runInitialSync, fetchFullMessage, normalizeMessage } from '../sync';
 import { ProviderError, ProviderErrorCode } from '../types/provider';
 
@@ -100,7 +99,7 @@ async function syncHistoryDelta(googleId: string, storedHistoryId: string | null
     return;
   }
 
-  const rows: MessageRow[] = [];
+  const rows: MessageInsert[] = [];
   for (const id of ids) {
     const raw = await fetchFullMessage(gmail, id);
     rows.push(normalizeMessage(raw, googleId));
@@ -112,7 +111,7 @@ async function syncHistoryDelta(googleId: string, storedHistoryId: string | null
 async function processNotification(notification: GmailNotification): Promise<void> {
   const user = await getUserByEmail(notification.emailAddress);
   if (!user) return; // Notification for an account we don't have on file — nothing to do.
-  await syncHistoryDelta(user.googleId, user.historyId, notification.historyId);
+  await syncHistoryDelta(user.google_id, user.history_id, notification.historyId);
 }
 
 /** Vercel entry point for Gmail's Pub/Sub push subscription. Verifies the push

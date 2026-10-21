@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { google, gmail_v1 } from 'googleapis';
 import { getAuthenticatedClient } from '../providers/gmail/auth';
 import { fetchFullMessage, normalizeMessage } from '../sync';
-import { upsertMessages, MessageRow } from '../db/messages';
+import { upsertMessages, MessageInsert } from '../db';
 import { ProviderError, ProviderErrorCode } from '../types/provider';
 
 export interface SendAttachment {
@@ -121,7 +121,7 @@ async function resolveMessageIdHeader(gmail: gmail_v1.Gmail, gmailMessageId: str
  *  messages.send's own response is minimal (id/threadId/labelIds only, no headers or body),
  *  so the full message is re-fetched via messages.get before normalizing — mirroring unit
  *  3's sync layer. */
-export async function sendMessage(googleId: string, input: SendMessageInput): Promise<MessageRow> {
+export async function sendMessage(googleId: string, input: SendMessageInput): Promise<MessageInsert> {
   const client = await getAuthenticatedClient(googleId);
   const gmail = google.gmail({ version: 'v1', auth: client });
 

@@ -66,7 +66,7 @@ vi.mock('googleapis', () => ({
 
 import { handleOAuthCallback } from '../../../../src/providers/gmail/auth';
 import { decrypt } from '../../../../src/providers/gmail/encryption';
-import { getServiceClient } from '../../../../src/db/client';
+import { getServiceClient } from '../../../../src/db';
 
 async function waitUntil(predicate: () => Promise<boolean>, timeoutMs = 3000, intervalMs = 50): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -144,7 +144,7 @@ describe('OAuth callback: token encryption, persistence, and the refresh listene
     const supabase = getServiceClient();
     await waitUntil(async () => {
       const { data } = await supabase.from('users').select('access_token_encrypted').eq('google_id', googleId).single();
-      return data?.access_token_encrypted && decrypt(data.access_token_encrypted) === 'refreshed-access-token';
+      return Boolean(data?.access_token_encrypted && decrypt(data.access_token_encrypted) === 'refreshed-access-token');
     });
 
     const { data: row } = await supabase

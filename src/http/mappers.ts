@@ -1,4 +1,4 @@
-import { MessageRow } from '../db/messages';
+import { MessageInsert } from '../db';
 
 export interface ApiMessage {
   id: string;
@@ -15,19 +15,19 @@ export interface ApiMessage {
   sentAt: string | null;
 }
 
-export function toApiMessage(row: MessageRow): ApiMessage {
+export function toApiMessage(row: MessageInsert): ApiMessage {
   return {
     id: row.gmail_id,
     threadId: row.thread_id,
-    subject: row.subject,
-    fromAddress: row.from_address,
-    toAddress: row.to_address,
-    snippet: row.snippet,
-    bodyPlain: row.body_plain,
-    bodyHtml: row.body_html,
+    subject: row.subject ?? null,
+    fromAddress: row.from_address ?? null,
+    toAddress: row.to_address ?? null,
+    snippet: row.snippet ?? null,
+    bodyPlain: row.body_plain ?? null,
+    bodyHtml: row.body_html ?? null,
     labelIds: row.label_ids,
     isRead: row.is_read,
     isStarred: row.is_starred,
-    sentAt: row.sent_at,
+    sentAt: row.sent_at ?? null,
   };
 }

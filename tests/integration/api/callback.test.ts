@@ -63,7 +63,7 @@ vi.mock('googleapis', () => ({
 
 import handler from '../../../api/v1/auth/google/callback';
 import { createMockReqRes } from '../../helpers/http';
-import { getServiceClient } from '../../../src/db/client';
+import { getServiceClient } from '../../../src/db';
 
 interface ErrorBody {
   error: { code: string; message: string };

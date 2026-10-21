@@ -1,7 +1,6 @@
 import { google, gmail_v1 } from 'googleapis';
 import { getAuthenticatedClient } from '../providers/gmail/auth';
-import { updateHistoryId } from '../db/users';
-import { upsertMessages, MessageRow, getMessageLabelIds, updateMessageReadStatus } from '../db/messages';
+import { updateHistoryId, upsertMessages, MessageInsert, getMessageLabelIds, updateMessageReadStatus } from '../db';
 import { ProviderError, ProviderErrorCode } from '../types/provider';
 
 const INITIAL_SYNC_LIMIT = 50;
@@ -57,7 +56,7 @@ function parseSentAt(dateHeader: string | null): string | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
-export function normalizeMessage(raw: gmail_v1.Schema$Message, googleId: string): MessageRow {
+export function normalizeMessage(raw: gmail_v1.Schema$Message, googleId: string): MessageInsert {
   if (!raw.id || !raw.threadId) {
     throw new ProviderError(ProviderErrorCode.UPSTREAM_ERROR, 'Gmail message missing id/threadId');
   }
@@ -129,7 +128,7 @@ export async function runInitialSync(googleId: string): Promise<InitialSyncResul
 
   const ids = await collectInboxMessageIds(gmail, INITIAL_SYNC_LIMIT);
 
-  const rows: MessageRow[] = [];
+  const rows: MessageInsert[] = [];
   for (const id of ids) {
     const raw = await fetchFullMessage(gmail, id);
     rows.push(normalizeMessage(raw, googleId));

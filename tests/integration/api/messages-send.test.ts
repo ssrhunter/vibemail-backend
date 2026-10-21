@@ -67,9 +67,8 @@ vi.mock('googleapis', () => ({
 
 import handler from '../../../api/v1/messages/send';
 import { createMockReqRes } from '../../helpers/http';
-import { getServiceClient } from '../../../src/db/client';
-import { upsertUserTokens } from '../../../src/db/users';
-import * as messagesDb from '../../../src/db/messages';
+import { getServiceClient, upsertUserTokens } from '../../../src/db';
+import * as dbModule from '../../../src/db';
 import { encrypt } from '../../../src/providers/gmail/encryption';
 import { signSessionToken } from '../../../src/middleware/auth';
 
@@ -191,7 +190,7 @@ describe('POST /api/v1/messages', () => {
     const sentId = `sent-${randomUUID()}`;
     hoisted.setSentId(sentId);
     hoisted.getMock.mockResolvedValue({ data: fullSentMessage(sentId) });
-    vi.spyOn(messagesDb, 'upsertMessages').mockRejectedValueOnce(new Error('simulated internal failure'));
+    vi.spyOn(dbModule, 'upsertMessages').mockRejectedValueOnce(new Error('simulated internal failure'));
     const { token } = signSessionToken(googleId);
 
     const { req, res, capture } = createMockReqRes({

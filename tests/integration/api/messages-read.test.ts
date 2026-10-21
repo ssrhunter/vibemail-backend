@@ -46,10 +46,8 @@ vi.mock('googleapis', () => ({
 
 import handler from '../../../api/v1/messages/read';
 import { createMockReqRes } from '../../helpers/http';
-import { getServiceClient } from '../../../src/db/client';
-import { upsertUserTokens } from '../../../src/db/users';
-import * as usersDb from '../../../src/db/users';
-import { upsertMessages } from '../../../src/db/messages';
+import { getServiceClient, upsertUserTokens, upsertMessages } from '../../../src/db';
+import * as dbModule from '../../../src/db';
 import { encrypt } from '../../../src/providers/gmail/encryption';
 import { signSessionToken } from '../../../src/middleware/auth';
 
@@ -172,7 +170,7 @@ describe('PATCH /api/v1/messages/read', () => {
     const gmailId = `msg-${randomUUID()}`;
     const googleId = await seedUserWithMessage(gmailId);
     const { token } = signSessionToken(googleId);
-    vi.spyOn(usersDb, 'getUserByGoogleId').mockRejectedValueOnce(new Error('simulated internal failure'));
+    vi.spyOn(dbModule, 'getUser').mockRejectedValueOnce(new Error('simulated internal failure'));
 
     const { req, res, capture } = createMockReqRes({
       method: 'PATCH',

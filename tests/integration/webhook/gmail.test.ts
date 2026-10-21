@@ -63,8 +63,7 @@ vi.mock('@vercel/functions', () => ({
 
 import handleGmailWebhook from '../../../src/webhook/gmail';
 import { createMockReqRes } from '../../helpers/http';
-import { getServiceClient } from '../../../src/db/client';
-import { upsertUserTokens, updateHistoryId, getUserHistoryId } from '../../../src/db/users';
+import { getServiceClient, upsertUserTokens, updateHistoryId, getUser } from '../../../src/db';
 import { encrypt } from '../../../src/providers/gmail/encryption';
 
 function pubSubBody(emailAddress: string, historyId: string): { message: { data: string } } {
@@ -191,8 +190,8 @@ describe('Gmail Pub/Sub webhook receiver', () => {
       .single();
     expect(messageRow).toMatchObject({ gmail_id: newMessageId, google_id: googleId, subject: 'Delta message' });
 
-    const historyIdAfter = await getUserHistoryId(googleId);
-    expect(historyIdAfter).toBe('999');
+    const userAfter = await getUser(googleId);
+    expect(userAfter?.history_id).toBe('999');
   });
 
   it('rejects requests with a missing/invalid Pub/Sub verification token before doing any work', async () => {
