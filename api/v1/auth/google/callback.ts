@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { handleOAuthCallback } from '../../../../src/providers/gmail/auth';
 import { signSessionToken } from '../../../../src/middleware/auth';
 import { sendError, sendSuccess } from '../../../../src/http/respond';
+import { OAUTH_STATE_COOKIE_NAME, clearOAuthStateCookie } from '../../../../src/http/cookies';
 import { ProviderError, ProviderErrorCode } from '../../../../src/types/provider';
 
 function queryParam(req: VercelRequest, name: string): string | undefined {
@@ -10,7 +11,13 @@ function queryParam(req: VercelRequest, name: string): string | undefined {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
+  if (req.method !== 'GET') {
+    sendError(res, 405, 'METHOD_NOT_ALLOWED', `${req.method} is not allowed on this endpoint`);
+    return;
+  }
+
   if (queryParam(req, 'error')) {
+    res.setHeader('Set-Cookie', clearOAuthStateCookie());
     sendError(res, 401, 'OAUTH_DENIED', 'User declined consent on Google\'s screen');
     return;
   }
@@ -25,9 +32,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     return;
   }
 
-  // NOTE: state is only checked for presence here, not verified against a previously
-  // issued value — there is no "initiate OAuth" HTTP endpoint yet that stores one to
-  // compare against, so this is not yet real CSRF protection.
+  // Verify state against the value initiateOAuth persisted in an httpOnly cookie —
+  // real CSRF protection, not just a presence check.
+  const expectedState = req.cookies?.[OAUTH_STATE_COOKIE_NAME];
+  res.setHeader('Set-Cookie', clearOAuthStateCookie());
+  if (!expectedState || expectedState !== state) {
+    sendError(res, 400, 'VALIDATION_ERROR', 'state did not match the value issued when the OAuth flow started', [
+      { field: 'state', issue: 'mismatch' },
+    ]);
+    return;
+  }
 
   try {
     const { googleId, email } = await handleOAuthCallback(code);

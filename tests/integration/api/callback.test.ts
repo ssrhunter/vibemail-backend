@@ -100,6 +100,7 @@ describe('GET /api/v1/auth/google/callback', () => {
 
     const { req, res, capture } = createMockReqRes({
       query: { code: 'good-code', state: 'csrf-state' },
+      cookies: { oauth_state: 'csrf-state' },
     });
     await handler(req, res);
     createdGoogleIds.push(googleId);
@@ -128,7 +129,10 @@ describe('GET /api/v1/auth/google/callback', () => {
 
   it('OAUTH_EXCHANGE_FAILED (502) when Google rejects the code', async () => {
     hoisted.setGetTokenShouldThrow(true);
-    const { req, res, capture } = createMockReqRes({ query: { code: 'bad-code', state: 'csrf-state' } });
+    const { req, res, capture } = createMockReqRes({
+      query: { code: 'bad-code', state: 'csrf-state' },
+      cookies: { oauth_state: 'csrf-state' },
+    });
     await handler(req, res);
 
     expect(capture.statusCode).toBe(502);
@@ -143,10 +147,32 @@ describe('GET /api/v1/auth/google/callback', () => {
       id_token: 'fake-id-token',
     });
     hoisted.setNextIdTokenPayload({}); // no sub/email -> identifyUser throws UPSTREAM_ERROR, not AUTH_ERROR
-    const { req, res, capture } = createMockReqRes({ query: { code: 'good-code', state: 'csrf-state' } });
+    const { req, res, capture } = createMockReqRes({
+      query: { code: 'good-code', state: 'csrf-state' },
+      cookies: { oauth_state: 'csrf-state' },
+    });
     await handler(req, res);
 
     expect(capture.statusCode).toBe(500);
     expect((capture.body as ErrorBody).error.code).toBe('INTERNAL_ERROR');
+  });
+
+  it('VALIDATION_ERROR (400) when state does not match the oauth_state cookie', async () => {
+    const { req, res, capture } = createMockReqRes({
+      query: { code: 'good-code', state: 'csrf-state' },
+      cookies: { oauth_state: 'a-different-value' },
+    });
+    await handler(req, res);
+
+    expect(capture.statusCode).toBe(400);
+    expect((capture.body as ErrorBody).error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('METHOD_NOT_ALLOWED (405) on a non-GET request', async () => {
+    const { req, res, capture } = createMockReqRes({ method: 'POST', query: {} });
+    await handler(req, res);
+
+    expect(capture.statusCode).toBe(405);
+    expect((capture.body as ErrorBody).error.code).toBe('METHOD_NOT_ALLOWED');
   });
 });

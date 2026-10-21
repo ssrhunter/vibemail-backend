@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import { google, Auth } from 'googleapis';
 import { encrypt, decrypt } from './encryption';
 import { upsertUserTokens, updateUserTokens, getUser, updateWatchExpiry, updateHistoryId } from '../../db';
@@ -15,10 +16,15 @@ const SCOPES = [
   'https://www.googleapis.com/auth/gmail.send',
 ];
 
+/** Thrown when a required env var (GOOGLE_CLIENT_ID/SECRET/REDIRECT_URI) is missing —
+ *  distinct from ProviderError so route handlers can map it to a dedicated config-error
+ *  response instead of a generic internal failure. */
+export class ConfigError extends Error {}
+
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
-    throw new Error(`${name} is not set`);
+    throw new ConfigError(`${name} is not set`);
   }
   return value;
 }
@@ -75,6 +81,19 @@ export function getAuthUrl(state: string): string {
     scope: SCOPES,
     state,
   });
+}
+
+export interface InitiateOAuthResult {
+  url: string;
+  state: string;
+}
+
+/** Generates a fresh anti-CSRF state value and the consent URL for it. The caller
+ *  (api/v1/auth/google/index.ts) is responsible for persisting `state` (e.g. an
+ *  httpOnly cookie) so the callback can verify the value Google sends back matches. */
+export function initiateOAuth(): InitiateOAuthResult {
+  const state = randomBytes(32).toString('base64url');
+  return { url: getAuthUrl(state), state };
 }
 
 /** Low-level code->tokens exchange, no persistence. Matches EmailProvider.exchangeCodeForTokens. */
