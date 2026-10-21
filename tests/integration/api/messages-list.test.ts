@@ -181,4 +181,17 @@ describe('GET /api/v1/messages', () => {
     expect(capture.statusCode).toBe(500);
     expect((capture.body as ErrorBody).error.code).toBe('INTERNAL_ERROR');
   });
+
+  it('METHOD_NOT_ALLOWED (405) on a method neither GET nor POST handles', async () => {
+    const googleId = await seedUser('500');
+    const { token } = signSessionToken(googleId);
+    const { req, res, capture } = createMockReqRes({
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    await handler(req, res);
+
+    expect(capture.statusCode).toBe(405);
+    expect((capture.body as ErrorBody).error.code).toBe('METHOD_NOT_ALLOWED');
+  });
 });

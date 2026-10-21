@@ -65,7 +65,7 @@ vi.mock('googleapis', () => ({
   },
 }));
 
-import handler from '../../../api/v1/messages/send';
+import handler from '../../../api/v1/messages/index';
 import { createMockReqRes } from '../../helpers/http';
 import { getServiceClient, upsertUserTokens } from '../../../src/db';
 import * as dbModule from '../../../src/db';
