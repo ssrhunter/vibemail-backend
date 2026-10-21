@@ -153,6 +153,24 @@
           "response": []
         },
         {
+          "name": "Happy path - filter by label=INBOX",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{jwt}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages?maxResults=20&label=INBOX",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "messages"],
+              "query": [
+                { "key": "maxResults", "value": "20" },
+                { "key": "label", "value": "INBOX" }
+              ]
+            },
+            "description": "Exercises contract.md §2.2's label param. Note: per the actual implementation (src/db/index.ts's listMessagesPage), label is a best-effort filter over already-synced Postgres rows (label_ids array-contains), not a live Gmail search — every returned message's labelIds should include \"INBOX\", but this reflects label_ids as of the last sync, not Gmail's live state."
+          },
+          "response": []
+        },
+        {
           "name": "UNAUTHENTICATED - no Authorization header",
           "request": {
             "method": "GET",
@@ -230,9 +248,32 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"to\": [\"recipient@example.com\"],\n  \"cc\": [\"cc@example.com\"],\n  \"subject\": \"Re: Project update\",\n  \"bodyText\": \"Plain text body\",\n  \"bodyHtml\": \"<p>HTML body</p>\"\n}",
+              "raw": "{\n  \"to\": [\"recipient@example.com\"],\n  \"cc\": [\"cc@example.com\"],\n  \"subject\": \"Project kickoff\",\n  \"bodyText\": \"Plain text body\",\n  \"bodyHtml\": \"<p>HTML body</p>\"\n}",
               "options": { "raw": { "language": "json" } }
-            }
+            },
+            "description": "Composes and sends a brand-new message — no threadId/inReplyTo. See \"Happy path - threaded reply\" below for the reply-into-an-existing-thread case."
+          },
+          "response": []
+        },
+        {
+          "name": "Happy path - threaded reply",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{jwt}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "messages"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"to\": [\"recipient@example.com\"],\n  \"subject\": \"Re: Project kickoff\",\n  \"bodyText\": \"Replying on this thread.\",\n  \"threadId\": \"18c9f2a1b2c3d4e5\",\n  \"inReplyTo\": \"18c9f2a1b2c3d4e5\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Exercises contract.md §2.3's threadId/inReplyTo reply path. The threadId/inReplyTo values here are placeholders — for this to actually succeed (not just be well-formed), replace them with a real threadId and message id from a message already synced into this account's messages table (e.g. from a \"List Messages\" response), since the server resolves inReplyTo's real RFC 2822 Message-ID via a live Gmail lookup before sending. A nonexistent id fails that lookup — see Send Message's GMAIL_SEND_FAILED example below."
           },
           "response": []
         },
@@ -273,7 +314,29 @@
               "raw": "{\n  \"bodyText\": \"Missing to and subject\"\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Expect 400 { error: { code: \"VALIDATION_ERROR\", details: [...] } } naming the missing to/subject fields."
+            "description": "Fields absent entirely (to/subject keys not present at all). Expect 400 { error: { code: \"VALIDATION_ERROR\", details: [...] } } naming the missing to/subject fields."
+          },
+          "response": []
+        },
+        {
+          "name": "VALIDATION_ERROR - empty string values for required fields",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{jwt}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "messages"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"to\": [\"\"],\n  \"subject\": \"\",\n  \"bodyText\": \"\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Distinct from the \"missing to/subject\" case above: here every required field is present but set to an empty string (or an array containing one), not omitted. Checks that validation inspects the values themselves rather than just field presence — to: [\"\"] fails email-format validation, subject: \"\" fails the required-non-empty check, and bodyText: \"\" is falsy so it doesn't satisfy the bodyText/bodyHtml requirement either. Expect 400 { error: { code: \"VALIDATION_ERROR\", details: [...] } }."
           },
           "response": []
         },
